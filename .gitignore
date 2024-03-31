@@ -1,0 +1,8 @@
+*.env
+*.venv
+*temp2
+*scaled2
+*inputs_n_outputs
+/scaled2/
+/inputs_n_outputs/
+/temp2/
