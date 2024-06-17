@@ -185,11 +185,11 @@ class ModelMaker:
         return info, past, headlines, quarter, yearly, output
 
 # function to combine pd dataframes' cells' lists in a way similar to transposing a matrix
-def simplify_pd_with_lists(df: pd.DataFrame()):
+def simplify_pd_with_lists(df: pd.DataFrame):
     return np.array(pd.DataFrame(df.to_dict()).values)
 
 
-def change_to_input(df: pd.DataFrame()):
+def change_to_input(df: pd.DataFrame):
     return_list = []
     for index in tqdm(df.index, desc="changing to input"):
         return_list.append(np.array(simplify_pd_with_lists(df.loc[index])))
