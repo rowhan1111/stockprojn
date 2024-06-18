@@ -1,5 +1,5 @@
 import torch
-
+import tensorflow
 
 def batched_dot_mul_sum(a, b):
     '''Computes batched dot by multiplying and summing'''

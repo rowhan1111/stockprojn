@@ -12,7 +12,6 @@ import random
 import threading
 import concurrent.futures
 from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 
 # class for preprocessing data to be put into the model
@@ -210,6 +209,7 @@ class Preprocessor:
         # for ticker, dates in tqdm(input_n_out_dict.items(), desc="preparing inputs", position=0):
         index = 0
         all_dict = {i: [] for i in self.columns_list}
+        dates_list = []
         for ticker in tqdm(ticker_list, desc=f"preparing inputs{pos}", leave=False):
             dates = self.process(ticker, past, future, file_path)
             self.columns_list = list(set(self.columns_list).difference(set(self.headline_columns)))
@@ -222,6 +222,7 @@ class Preprocessor:
                 continue
             # iterate through the dictionary in the given date
             for date, date_dict in tqdm(dates.items(), desc=f"Processing dates{pos}", leave=False):
+                dates_list.append(date)
                 # iterate through the dictionary in the given date and store them in all_dict
                 for index_key, value in tqdm(date_dict.items(), desc=f"processing datedicts{pos}", leave=False):
                     if index_key == "info":
@@ -244,6 +245,7 @@ class Preprocessor:
                         if column_name not in self.columns_list:
                             continue
                         all_dict[column_name].append(value[column_name].sort_index(axis=0).values)
+        all_dict['dates'] = dates_list
         return pd.DataFrame(all_dict)
 
     def to_embeddings(self, headlines):

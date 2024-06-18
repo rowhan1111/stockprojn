@@ -8,10 +8,11 @@ import numpy as np
 import pickle
 from tqdm import tqdm
 import datetime
+import torch
 
 
 class ModelMaker:
-    def __init__(self):
+    def __init__(self, load_scale=True, load_data=True):
         columns_used = ["headline", "Open", "High", "Low", "Close", "Volume"]
         self.essential = ["Open", "High", "Low", "Close"]
         self.yearly_columns = []
@@ -24,7 +25,7 @@ class ModelMaker:
         self.past_length, self.future_length = 100, 30
         # get scales' parameters
         # true loads the existing scaler while false creates new scaler and scales from given file
-        self.quarter_scaler, self.year_scaler, self.vol_scaler, self.daily_scaler, self.tokenizer = self.scaler(True)
+        self.quarter_scaler, self.year_scaler, self.vol_scaler, self.daily_scaler, self.tokenizer = self.scaler(load_scale)
         self.vocab_size = len(self.tokenizer.word_index) + 1
         device_name = tf.test.gpu_device_name()
         self.gpu_available = False if not device_name else True
@@ -33,7 +34,7 @@ class ModelMaker:
                                       store_path='inputs_n_outputs/tickers/')
         '''
         # used to create input n output data, true loads existing data
-        self.input_n_output = self.data_load(True)
+        self.input_n_output = self.data_load(load_data)
 
         self.info, self.past, self.headlines, self.quarter, self.yearly, self.output = (
             self.process_to_input(self.input_n_output))
@@ -76,7 +77,7 @@ class ModelMaker:
         return pd.read_pickle(f'{file_path}input_n_output{self.past_length}&{self.future_length}.pkl')
 
     # function to create the model to use for predicting stock trends
-    def create_model(self):
+    def create_model_tensorflow(self) -> Model:
         # process past
         input_past = Input(shape=(self.past.shape[1], int(len(self.essential))))
         rnn_layer_past = layers.SimpleRNN(4, input_shape=(self.past.shape[1], int(len(self.essential))))
@@ -181,7 +182,7 @@ class ModelMaker:
         output = change_to_input(input_n_output[self.essential_out])
         input_n_output.drop(self.essential_out, axis=1, inplace=True)
         output = np.squeeze(output)
-        del self.input_n_output
+        # del self.input_n_output
         return info, past, headlines, quarter, yearly, output
 
 # function to combine pd dataframes' cells' lists in a way similar to transposing a matrix
@@ -204,4 +205,11 @@ def retrieve_max_len(df):
     # return int(df.apply(len).max())
 
 
-tester = ModelMaker()
+class TorchModel(torch.nn.Module):
+    def __init__(self):
+        pass
+        
+
+
+if __name__ == "__main__":
+    tester = ModelMaker(load_data=False)

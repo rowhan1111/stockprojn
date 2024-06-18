@@ -3,6 +3,12 @@
 *temp2
 *scaled2
 *inputs_n_outputs
+*venv
+*libcuda.so
+*libcuda.so.1
+*libcuda.so.2023.3.1
+*libcupti.so.2022.2.1
+*libcupti.so.2023.3.1
 /scaled2/
 /inputs_n_outputs/
 /temp2/
