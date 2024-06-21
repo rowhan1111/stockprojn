@@ -91,7 +91,9 @@ class Preprocessor:
 
             unscaled = future_no_vol * self.daily_scaler.scale_[0] + self.daily_scaler.mean_[0]
             concated = unscaled.join(unscaled_vol)
+            # what the output should be like determined by self.output_method
             unscaled_vals = self.output_method.best_fit_line(concated).dropna()
+            act_fut_out = self.output_method.last_day(concated).dropna()
             unscaled_vals["Volume"] = unscaled_vals["Volume"]/self.vol_scaler.scale_
             '''
             swap_column_fut = self.output_method.best_fit_line(future_val).dropna()
@@ -99,7 +101,8 @@ class Preprocessor:
             return_dict[date] = {"future_values": swap_column_fut}
             '''
             unscaled_vals.columns = [i + "_fut" for i in unscaled_vals.columns]
-            return_dict[date] = {"future_values": unscaled_vals}
+            act_fut_out.columns = [i + "_actfut" for i in act_fut_out.columns]
+            return_dict[date] = {"future_values": unscaled_vals, "act_future_values": act_fut_out}
 
             # self.output_method.seasonal_decomposition(future_val)
             # get past data
@@ -222,7 +225,7 @@ class Preprocessor:
                 continue
             # iterate through the dictionary in the given date
             for date, date_dict in tqdm(dates.items(), desc=f"Processing dates{pos}", leave=False):
-                dates_list.append(date)
+                dates_list.append([date, ticker])
                 # iterate through the dictionary in the given date and store them in all_dict
                 for index_key, value in tqdm(date_dict.items(), desc=f"processing datedicts{pos}", leave=False):
                     if index_key == "info":

@@ -1,1 +1,1 @@
-activate venv: source venv/Scripts/activate.ps1 activate venv
+activate venv: source venv/Scripts/activate

@@ -12,17 +12,18 @@ import torch
 
 
 class ModelMaker:
-    def __init__(self, load_scale=True, load_data=True):
+    def __init__(self, load_scale=True, load_data=True, past=100, fut=30):
         columns_used = ["headline", "Open", "High", "Low", "Close", "Volume"]
         self.essential = ["Open", "High", "Low", "Close"]
         self.yearly_columns = []
         self.essential_out = [i + "_fut" for i in self.essential]
+        self.act_out = [i + "_actfut" for i in self.essential]
         div_splits = ["Dividends", "Stock Splits"]
         columns_dropped = []
         self.file_path, self.scaled_path = 'temp2/', 'scaled2/'
         self.processor = Preprocessor(self.file_path, columns_used, self.essential, columns_dropped, div_splits,
                                       self.scaled_path)
-        self.past_length, self.future_length = 100, 30
+        self.past_length, self.future_length = past, fut
         # get scales' parameters
         # true loads the existing scaler while false creates new scaler and scales from given file
         self.quarter_scaler, self.year_scaler, self.vol_scaler, self.daily_scaler, self.tokenizer = self.scaler(load_scale)
@@ -35,18 +36,19 @@ class ModelMaker:
         '''
         # used to create input n output data, true loads existing data
         self.input_n_output = self.data_load(load_data)
-
-        self.info, self.past, self.headlines, self.quarter, self.yearly, self.output = (
+        self.dates = self.input_n_output['dates']
+        self.list_for_inputs = (
             self.process_to_input(self.input_n_output))
-
+        self.info, self.past, self.headlines, self.quarter, self.yearly, self.output, self.future = self.list_for_inputs
+        self.last_days = np.array([past[-1] for past in self.past])
         '''
         test = self.model.predict([self.past, self.quarter, self.yearly, self.info, self.headlines])
         out = self.output
         '''
-        breakpoint()
 
     # scale datas and put them into scaled folder + store scaler into scaler folder
     def scaler(self, load_file=False):
+        # self.quarter_scaler, self.year_scaler, self.vol_scaler, self.daily_scaler, self.tokenizer
         if not load_file:
             to_return = self.processor.scale_all()
             index = 1
@@ -140,22 +142,25 @@ class ModelMaker:
     def train_model(self, train_model, model_name, epochs=10):
         print("Model Training commenced")
         if train_model:
-            model = self.create_model()
+            model = self.create_model_tensorflow()
             print("Model Created")
             if self.gpu_available:
-                logs = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-                tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logs, histogram_freq=1, profile_batch=(500, 520))
-                tf.profiler.experimental.server.start(6000)
-
-                model.fit([self.past, self.quarter, self.yearly, self.info, self.headlines], self.output,
-                               epochs=epochs, batch_size=128, validation_split=0.2, callbacks=[tensorboard_callback])
+                with tf.device('/gpu:0'):
+                    print("gpu being used")
+                    logs = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logs, histogram_freq=1, profile_batch=(500, 520))
+                    tf.profiler.experimental.server.start(6000)
+                    model.fit([self.past, self.quarter, self.yearly, self.info, self.headlines], self.percent_diff, epochs=epochs, batch_size=128, validation_split=0.2, callbacks=[tensorboard_callback])
+                    # model.fit([self.past, self.quarter, self.yearly, self.info, self.headlines], self.output, epochs=epochs, batch_size=128, validation_split=0.2, callbacks=[tensorboard_callback])
             else:
                 model.fit([self.past, self.quarter, self.yearly, self.info, self.headlines], self.output,
                                epochs=epochs, batch_size=512, validation_split=0.2)
-            pickle.dump(model, file=open(f'models/{model_name}.pkl', 'wb'))
+            model.save(f'models/{model_name}.keras')
+            #pickle.dump(model, file=open(f'models/{model_name}.pkl', 'wb'))
             return model
         else:
-            return pickle.load(file=open(f'models/{model_name}.pkl', 'rb'))
+            return tf.keras.models.load_model(f'models/{model_name}.keras')
+            # return pickle.load(file=open(f'models/{model_name}.pkl', 'rb'))
 
     def process_to_input(self, input_n_output, num_news_days=10):
         if not self.processor.quarter_list and not self.processor.year_list:
@@ -182,8 +187,11 @@ class ModelMaker:
         output = change_to_input(input_n_output[self.essential_out])
         input_n_output.drop(self.essential_out, axis=1, inplace=True)
         output = np.squeeze(output)
+        future = change_to_input(input_n_output[self.act_out])
+        input_n_output.drop(self.act_out, axis=1, inplace=True)
+        future = np.squeeze(future)
         # del self.input_n_output
-        return info, past, headlines, quarter, yearly, output
+        return info, past, headlines, quarter, yearly, output, future
 
 # function to combine pd dataframes' cells' lists in a way similar to transposing a matrix
 def simplify_pd_with_lists(df: pd.DataFrame):
