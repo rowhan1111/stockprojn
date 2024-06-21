@@ -2,7 +2,7 @@ import pandas as pd
 import datetime
 import os
 import pickle as pk
-from model import ModelMaker
+from stock_price_model import ModelMaker
 import tensorflow as tf
 
 
