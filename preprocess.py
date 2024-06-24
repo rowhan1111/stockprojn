@@ -213,6 +213,7 @@ class Preprocessor:
         index = 0
         all_dict = {i: [] for i in self.columns_list}
         dates_list = []
+        ticker_store = []
         for ticker in tqdm(ticker_list, desc=f"preparing inputs{pos}", leave=False):
             dates = self.process(ticker, past, future, file_path)
             self.columns_list = list(set(self.columns_list).difference(set(self.headline_columns)))
@@ -225,7 +226,8 @@ class Preprocessor:
                 continue
             # iterate through the dictionary in the given date
             for date, date_dict in tqdm(dates.items(), desc=f"Processing dates{pos}", leave=False):
-                dates_list.append([date, ticker])
+                dates_list.append(date)
+                ticker_store.append(ticker)
                 # iterate through the dictionary in the given date and store them in all_dict
                 for index_key, value in tqdm(date_dict.items(), desc=f"processing datedicts{pos}", leave=False):
                     if index_key == "info":
@@ -249,6 +251,7 @@ class Preprocessor:
                             continue
                         all_dict[column_name].append(value[column_name].sort_index(axis=0).values)
         all_dict['dates'] = dates_list
+        all_dict['tickers'] = ticker_store
         return pd.DataFrame(all_dict)
 
     def to_embeddings(self, headlines):

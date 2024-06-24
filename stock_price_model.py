@@ -37,10 +37,13 @@ class ModelMaker:
         # used to create input n output data, true loads existing data
         self.input_n_output = self.data_load(load_data)
         self.dates = self.input_n_output['dates']
+        self.dates = np.reshape(self.dates, (np.shape(self.dates)[0], 1))
+        self.tickers = self.input_n_output['tickers']
+        self.tickers = np.reshape(self.tickers, (np.shape(self.tickers)[0], 1))
         self.list_for_inputs = (
             self.process_to_input(self.input_n_output))
         self.info, self.past, self.headlines, self.quarter, self.yearly, self.output, self.future = self.list_for_inputs
-        self.last_days = np.array([past[-1] for past in self.past])
+        self.last_days = self.daily_scaler.inverse_transform(np.array([past[-1] for past in self.past]))
         '''
         test = self.model.predict([self.past, self.quarter, self.yearly, self.info, self.headlines])
         out = self.output
