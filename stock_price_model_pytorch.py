@@ -1,8 +1,10 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 import os
 import tensorflow as tf
 import pandas as pd
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras import Input, layers
 from preprocess import Preprocessor
 import numpy as np
 import pickle
@@ -11,7 +13,7 @@ import datetime
 import torch
 
 
-class ModelMaker:
+class DataHolder:
     def __init__(self, load_scale=True, load_data=True, past=100, fut=30):
         columns_used = ["headline", "Open", "High", "Low", "Close", "Volume"]
         self.essential = ["Open", "High", "Low", "Close"]
@@ -28,8 +30,8 @@ class ModelMaker:
         # true loads the existing scaler while false creates new scaler and scales from given file
         self.quarter_scaler, self.year_scaler, self.vol_scaler, self.daily_scaler, self.tokenizer = self.scaler(load_scale)
         self.vocab_size = len(self.tokenizer.word_index) + 1
-        device_name = tf.test.gpu_device_name()
-        self.gpu_available = False if not device_name else True
+        device_name = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.gpu_available = False if device_name == 'cpu' else True
         '''
         self.processor.thread_storing(self.past_length, self.future_length, self.scaled_path,
                                       store_path='inputs_n_outputs/tickers/')
@@ -81,90 +83,6 @@ class ModelMaker:
             quit()
         return pd.read_pickle(f'{file_path}input_n_output{self.past_length}&{self.future_length}.pkl')
 
-    # function to create the model to use for predicting stock trends
-    def create_model_tensorflow(self) -> Model:
-        # process past
-        input_past = Input(shape=(self.past.shape[1], int(len(self.essential))))
-        rnn_layer_past = layers.SimpleRNN(4, input_shape=(self.past.shape[1], int(len(self.essential))))
-        out_past = rnn_layer_past(input_past)
-
-        # process quarterly data
-        input_quarter = Input(shape=(self.quarter.shape[1], int(len(self.quarter_columns))))
-        rnn_layer_quarter = layers.SimpleRNN(4, input_shape=(self.quarter.shape[1], int(len(self.quarter_columns))))
-        out_quarter = rnn_layer_quarter(input_quarter)
-
-        # process yearly data
-        input_yearly = Input(shape=(self.yearly.shape[1], int(len(self.year_columns))))
-        rnn_layer_year = layers.SimpleRNN(4, input_shape=(self.yearly.shape[1], int(len(self.year_columns))))
-        out_yearly = rnn_layer_year(input_yearly)
-
-        # process stock info
-        input_info = Input(shape=(self.info.shape[1], ))
-        out_info = layers.Dense(units=5, activation='tanh')(input_info)
-
-        # process headlines
-
-        # normally working version, requires flattening
-        input_headlines = Input(shape=(self.headlines.shape[1], ))
-
-        # masked = layers.Masking()(input_headlines)
-        embedding_layer = layers.Embedding(input_dim=self.vocab_size, output_dim=2, input_length=self.headlines.shape[1], mask_zero=True)(input_headlines)
-        lstm_layer = layers.LSTM(2, input_shape=(None, 3))(embedding_layer)
-        out_headlines = layers.Dense(1, activation='tanh')(lstm_layer)
-
-        '''
-        # weirdly working version - lstm stacking?
-        input_headlines = Input(shape=(self.headlines.shape[1], self.headlines.shape[2]))
-        headline_lstm = []  # list to store all the lstm's
-        embedding_layer = layers.Embedding(input_dim=self.vocab_size, output_dim=2,
-                                           input_length=self.headlines.shape[2], mask_zero=True)(input_headlines)
-        split_layers = layers.Lambda(lambda x: tf.unstack(x, axis=1))(embedding_layer)  # input_headlines  # split input headlines
-        # create lstm model with embedding for each split layer
-        for i in range(len(split_layers)):
-            input_headline = layers.Input(shape=(None, embedding_layer.shape.dims[3]))
-            # embedding_layer = layers.Embedding(input_dim=self.vocab_size, output_dim=2, input_length=self.headlines.shape[2], mask_zero=True)(input_headline)
-            # lstm_layer = layers.LSTM(5, input_shape=(None, 3), return_sequences=True)(embedding_layer)
-            lstm_layer = layers.SimpleRNN(2, input_shape=(None, 3), return_sequences=True)(input_headline)
-            headline_lstm.append(Model(inputs=input_headline, outputs=lstm_layer))
-        # combine all layers with concatenate
-        headlines_comb = [lstm(split_layer) for lstm, split_layer in zip(headline_lstm, split_layers)]
-        con_headlines = layers.Concatenate(axis=1)(headlines_comb)
-        # merged_layer_reshaped = layers.Reshape((-1, self.past_length))(con_headlines)
-        # process the news headlines of different dates using lstm
-        rnn_layer_headline = layers.LSTM(units=4, input_shape=(None, ))(con_headlines)
-        out_headlines = layers.Dense(1, activation='tanh')(rnn_layer_headline)
-        '''
-        # combine all and return output + define model
-        con = layers.concatenate([out_past, out_quarter, out_yearly, out_info, out_headlines])
-        final_output = layers.Dense(units=4, activation='tanh')(con)
-        model = Model(inputs=[input_past, input_quarter, input_yearly, input_info, input_headlines],
-                      outputs=final_output)
-        model.compile(optimizer='adam', loss='mean_squared_error')
-        return model
-
-    def train_model(self, train_model, model_name, epochs=10):
-        print("Model Training commenced")
-        if train_model:
-            model = self.create_model_tensorflow()
-            print("Model Created")
-            if self.gpu_available:
-                with tf.device('/gpu:0'):
-                    print("gpu being used")
-                    logs = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-                    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logs, histogram_freq=1, profile_batch=(500, 520))
-                    tf.profiler.experimental.server.start(6000)
-                    model.fit([self.past, self.quarter, self.yearly, self.info, self.headlines], self.percent_diff, epochs=epochs, batch_size=128, validation_split=0.2, callbacks=[tensorboard_callback])
-                    # model.fit([self.past, self.quarter, self.yearly, self.info, self.headlines], self.output, epochs=epochs, batch_size=128, validation_split=0.2, callbacks=[tensorboard_callback])
-            else:
-                model.fit([self.past, self.quarter, self.yearly, self.info, self.headlines], self.output,
-                               epochs=epochs, batch_size=512, validation_split=0.2)
-            model.save(f'models/{model_name}.keras')
-            #pickle.dump(model, file=open(f'models/{model_name}.pkl', 'wb'))
-            return model
-        else:
-            return tf.keras.models.load_model(f'models/{model_name}.keras')
-            # return pickle.load(file=open(f'models/{model_name}.pkl', 'rb'))
-
     def process_to_input(self, input_n_output, num_news_days=10):
         if not self.processor.quarter_list and not self.processor.year_list:
             self.quarter_columns, self.year_columns = self.processor.get_columns(self.file_path,
@@ -210,17 +128,120 @@ def change_to_input(df: pd.DataFrame):
     return_list = np.stack(return_list, axis=0)
     return return_list
 
+class ModelMakerPyTorch(nn.Module):
+    def __init__(self, vocab_size, past_length, quarter_length, yearly_length, info_length, headlines_length):
+        super(ModelMakerPyTorch, self).__init__()
 
-def retrieve_max_len(df):
-    return df.shape[1]
-    # return int(df.apply(len).max())
+        # Define layers for past data
+        self.rnn_past = nn.RNN(input_size=4, hidden_size=4, batch_first=True)
+
+        # Define layers for quarterly data
+        self.rnn_quarter = nn.RNN(input_size=5, hidden_size=4, batch_first=True)
+
+        # Define layers for yearly data
+        self.rnn_yearly = nn.RNN(input_size=5, hidden_size=4, batch_first=True)
+
+        # Define layers for stock info
+        self.dense_info = nn.Linear(info_length, 5)
+
+        # Define layers for headlines
+        self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=2, padding_idx=0)
+        self.lstm_headlines = nn.LSTM(input_size=2, hidden_size=2, batch_first=True)
+        self.dense_headlines = nn.Linear(2, 1)
+
+        # Define final dense layer
+        self.final_dense = nn.Linear(4 + 4 + 4 + 5 + 1, 4)
+
+    def forward(self, past, quarter, yearly, info, headlines):
+        # Process past data
+        out_past, _ = self.rnn_past(past)
+        out_past = out_past[:, -1, :]
+
+        # Process quarterly data
+        out_quarter, _ = self.rnn_quarter(quarter)
+        out_quarter = out_quarter[:, -1, :]
+
+        # Process yearly data
+        out_yearly, _ = self.rnn_yearly(yearly)
+        out_yearly = out_yearly[:, -1, :]
+
+        # Process stock info
+        out_info = torch.tanh(self.dense_info(info))
+
+        # Process headlines
+        embedded_headlines = self.embedding(headlines)
+        lstm_out, _ = self.lstm_headlines(embedded_headlines)
+        out_headlines = torch.tanh(self.dense_headlines(lstm_out[:, -1, :]))
+
+        # Combine all outputs
+        combined = torch.cat([out_past, out_quarter, out_yearly, out_info, out_headlines], dim=1)
+        final_output = torch.tanh(self.final_dense(combined))
+
+        return final_output
 
 
-class TorchModel(torch.nn.Module):
-    def __init__(self):
-        pass
-        
+def train_model_pytorch(model, train_data, train_labels, epochs=10, batch_size=32, learning_rate=0.001, device='cpu'):
+    # Move model to the appropriate device
+    model.to(device)
 
+    # Create DataLoader
+    train_dataset = TensorDataset(*train_data, train_labels)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-if __name__ == "__main__":
-    tester = ModelMaker(load_data=False)
+    # Define loss function and optimizer
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Set model to training mode
+    model.train()
+
+    # Training loop
+    for epoch in range(epochs):
+        running_loss = 0.0
+        for i, (past, quarter, yearly, info, headlines, labels) in enumerate(train_loader):
+            # Move data to the appropriate device
+            past, quarter, yearly, info, headlines, labels = past.to(device), quarter.to(device), yearly.to(device), info.to(device), headlines.to(device), labels.to(device)
+
+            # Zero the parameter gradients
+            optimizer.zero_grad()
+
+            # Forward pass
+            outputs = model(past, quarter, yearly, info, headlines)
+
+            # Compute loss
+            loss = criterion(outputs, labels)
+
+            # Backward pass and optimize
+            loss.backward()
+            optimizer.step()
+
+            # Print statistics
+            running_loss += loss.item()
+            if i % 10 == 9:  # Print every 10 batches
+                print(f'Epoch [{epoch + 1}/{epochs}], Batch [{i + 1}/{len(train_loader)}], Loss: {running_loss / 10:.4f}')
+                running_loss = 0.0
+
+    print('Training Finished')
+
+# Example usage:
+# Assuming train_data and train_labels are pre-defined tensors with the correct shapes
+# train_data should be a tuple of tensors: (past, quarter, yearly, info, headlines)
+# train_labels should be a tensor of shape (batch_size, 4)
+
+# Example data (replace with actual data)
+batch_size = 32
+train_past = torch.randn(batch_size * 100, 100, 4)  # Adjust past_length accordingly
+train_quarter = torch.randn(batch_size * 100, 30, 5)  # Adjust quarter_length accordingly
+train_yearly = torch.randn(batch_size * 100, 30, 5)  # Adjust yearly_length accordingly
+train_info = torch.randn(batch_size * 100, 10)  # Adjust info_length accordingly
+train_headlines = torch.randint(0, 1000, (batch_size * 100, 10))  # Adjust vocab_size and headlines_length accordingly
+train_labels = torch.randn(batch_size * 100, 4)
+
+train_data = (train_past, train_quarter, train_yearly, train_info, train_headlines)
+
+# Create the model
+model = ModelMakerPyTorch(vocab_size=1000, past_length=100, quarter_length=30, yearly_length=30, info_length=10, headlines_length=10)
+
+# Train the model
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+train_model_pytorch(model, train_data, train_labels, epochs=10, batch_size=batch_size, learning_rate=0.001, device=device)

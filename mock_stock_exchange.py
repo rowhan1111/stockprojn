@@ -2,7 +2,7 @@ import pandas as pd
 import datetime
 import os
 import pickle as pk
-from stock_price_model import ModelMaker
+from stock_price_model_tensorflow import ModelMaker
 import tensorflow as tf
 import gym
 from gym import spaces
